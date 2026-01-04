@@ -220,12 +220,12 @@ const App: React.FC = () => {
                 <span className="text-xs font-mono text-rose-400">{config.particleCount}</span>
             </div>
             <input 
-                type="range" min="50" max="600" step="10" 
+                type="range" min="3" max="1000" step="1" 
                 value={config.particleCount} 
                 onChange={(e) => setConfig({...config, particleCount: parseInt(e.target.value)})}
                 className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
             />
-            <p className="text-[8px] text-slate-600 mt-1 uppercase italic">Higher counts increase computational load (O(n²))</p>
+            <p className="text-[8px] text-slate-600 mt-1 uppercase italic">High counts (1000) may impact performance on older devices.</p>
         </div>
 
         <div>
@@ -265,4 +265,70 @@ const App: React.FC = () => {
                         className="w-3 h-3 accent-indigo-500"
                     />
                     <span className="text-xs font-mono text-indigo-400">{config.trailLength}</span>
-                
+                </div>
+            </div>
+            <input 
+                type="range" min="1" max="100" step="1" 
+                value={config.trailLength} 
+                disabled={!config.showTrails}
+                onChange={(e) => setConfig({...config, trailLength: parseInt(e.target.value)})}
+                className={`w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 ${!config.showTrails ? 'opacity-30 cursor-not-allowed' : ''}`}
+            />
+        </div>
+
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Simulation Drag</label>
+            <span className="text-xs font-mono text-emerald-400">{(config.friction * 100).toFixed(2)}%</span>
+          </div>
+          <input 
+            type="range" min="0" max="0.05" step="0.0001" 
+            value={config.friction} 
+            onChange={(e) => setConfig({...config, friction: parseFloat(e.target.value)})}
+            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+          />
+        </div>
+
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Visual Glow</label>
+            <span className="text-xs font-mono text-white">{config.intensity.toFixed(1)}x</span>
+          </div>
+          <input 
+            type="range" min="0.5" max="2.5" step="0.1" 
+            value={config.intensity} 
+            onChange={(e) => setConfig({...config, intensity: parseFloat(e.target.value)})}
+            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-white"
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <button 
+            onClick={() => setConfig({...config, paused: !config.paused})}
+            className={`flex-1 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${config.paused ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30' : 'bg-rose-600/20 text-rose-400 border border-rose-500/30'}`}
+          >
+            {config.paused ? 'Resume' : 'Pause'}
+          </button>
+          <button 
+            onClick={() => engineRef.current?.reset()}
+            className="px-4 py-3 bg-slate-800 text-slate-400 rounded-xl border border-white/5 hover:bg-slate-700 transition-colors"
+          >
+            <i className="fas fa-rotate"></i>
+          </button>
+        </div>
+      </div>
+
+      <div className="absolute bottom-8 right-8 flex flex-col items-end pointer-events-none font-mono text-[9px] text-slate-600 uppercase tracking-widest">
+        <div className="flex items-center gap-4 bg-slate-900/30 px-4 py-2 rounded-full border border-white/5">
+            <span className="flex items-center gap-1.5 text-emerald-500">
+                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                Real-time Physics
+            </span>
+            <span>60 FPS</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default App;
