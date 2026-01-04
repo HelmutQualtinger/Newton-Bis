@@ -1,5 +1,5 @@
 {
-  "name": "Copy of Newtonian Particle Sim",
+  "name": "Newtonian Particle Sim",
   "description": "A high-performance interactive physics simulation of 200+ particles interacting via Newton's Law of Universal Gravitation, featuring AI-powered physics insights.",
   "requestFramePermissions": []
 }
