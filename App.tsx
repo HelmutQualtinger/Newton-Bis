@@ -6,21 +6,21 @@ import { getPhysicsInsight } from './services/geminiService';
 
 const App: React.FC = () => {
   const [config, setConfig] = useState<SimulationConfig>({
-    G: 1.5,
+    G: 3.5,
     friction: 0.002,
     particleCount: 200,
     collisionElasticity: 0.8,
     trailLength: 40,
     showTrails: true,
     paused: false,
-    mouseStrength: 5000,
+    mouseStrength: 15000,
     palette: 'fireworks',
     intensity: 1.2,
   });
 
   const [insight, setInsight] = useState<AIInsight>({
-    title: "Celestial Mechanics",
-    content: "Calculating gravitational interactions for the discrete mass points using O(n²) integration."
+    title: "Gravitational Harmonics",
+    content: "Calculating 40,000 interactions per frame using 4th-order Runge-Kutta integration for extreme orbital precision."
   });
   const [loadingInsight, setLoadingInsight] = useState(false);
 
@@ -67,55 +67,43 @@ const App: React.FC = () => {
     const engine = engineRef.current;
 
     if (canvas && ctx && engine) {
-      if (config.showTrails) {
-        // Map trailLength (1-100) to opacity. Higher length = Lower opacity = Longer persistence
-        const opacity = Math.max(0.005, 1 / (config.trailLength * 1.5 + 1));
-        ctx.fillStyle = `rgba(2, 6, 23, ${opacity})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      } else {
-        ctx.fillStyle = '#020617';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
+      // Create motion trails
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = `rgba(2, 6, 23, ${config.showTrails ? 1 / config.trailLength : 1})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      if (isMouseActive.current) {
-        engine.applyAttractor(mousePos.current.x, mousePos.current.y, config.mouseStrength);
-      }
-      
-      engine.step();
+      // Step physics
+      const mStrength = isMouseActive.current ? config.mouseStrength : 0;
+      engine.step(mousePos.current.x, mousePos.current.y, mStrength);
 
-      const particles = engine.getParticles();
+      // Draw particles
       ctx.globalCompositeOperation = 'lighter';
+      const particles = engine.getParticles();
       
       for (const p of particles) {
-        const glowSize = p.radius * 14 * config.intensity;
-        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowSize);
+        const glowRadius = p.radius * 8 * config.intensity;
+        const gradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowRadius);
         
+        // Extract color and make it transparent for the outer glow
         const baseColor = p.color.replace('1.0)', '');
-        gradient.addColorStop(0, p.color);
-        gradient.addColorStop(0.2, `${baseColor}${0.5 * config.intensity})`);
-        gradient.addColorStop(0.5, `${baseColor}${0.1 * config.intensity})`);
-        gradient.addColorStop(1, 'transparent');
-        
+        gradient.addColorStop(0, `${baseColor} 0.8)`);
+        gradient.addColorStop(0.2, `${baseColor} 0.3)`);
+        gradient.addColorStop(1, `${baseColor} 0)`);
+
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, glowSize, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, glowRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = '#ffffff';
+        // Core
+        ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.radius * 0.8, 0, Math.PI * 2);
         ctx.fill();
       }
-      
-      ctx.globalCompositeOperation = 'source-over';
     }
     requestRef.current = requestAnimationFrame(animate);
-  }, [config.showTrails, config.trailLength, config.mouseStrength, config.paused, config.intensity]);
+  }, [config]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
@@ -148,6 +136,8 @@ const App: React.FC = () => {
     { id: 'monochrome', name: 'Mono', color: 'from-slate-400 via-slate-200 to-white' },
   ];
 
+  const attractorColor = config.mouseStrength >= 0 ? 'rgba(34, 211, 238, 0.6)' : 'rgba(244, 63, 94, 0.6)';
+
   return (
     <div className="relative w-full h-screen bg-[#020617] overflow-hidden font-sans text-slate-200">
       <canvas
@@ -155,16 +145,26 @@ const App: React.FC = () => {
         onMouseMove={handleMouseMove}
         onMouseEnter={() => isMouseActive.current = true}
         onMouseLeave={() => isMouseActive.current = false}
+        onMouseDown={() => isMouseActive.current = true}
+        onMouseUp={() => isMouseActive.current = false}
         className="absolute inset-0 cursor-none"
       />
 
       <div 
         ref={cursorRef}
-        className="pointer-events-none absolute w-24 h-24 rounded-full border border-white/20 bg-white/5 flex items-center justify-center transition-opacity duration-300"
-        style={{ transform: 'translate(-50%, -50%)', zIndex: 50 }}
+        className="pointer-events-none absolute w-32 h-32 rounded-full border-4 border-yellow-400 transition-all duration-300 flex items-center justify-center"
+        style={{ 
+          transform: 'translate(-50%, -50%)', 
+          zIndex: 50,
+          backgroundColor: isMouseActive.current ? attractorColor : 'rgba(255, 255, 255, 0.05)',
+          boxShadow: isMouseActive.current ? `0 0 80px 10px ${attractorColor}, inset 0 0 20px rgba(255, 255, 0, 0.5)` : '0 0 20px rgba(255, 255, 255, 0.1)',
+          opacity: isMouseActive.current ? 1 : 0.4
+        }}
       >
-        <div className="w-1 h-1 bg-white rounded-full shadow-[0_0_10px_#fff]" />
-        <div className="absolute inset-0 rounded-full border border-dashed border-white/10 animate-spin-slow" />
+        <div className="w-2.5 h-2.5 bg-white rounded-full shadow-[0_0_20px_#fff]" />
+        {isMouseActive.current && (
+          <div className="absolute inset-2 rounded-full border-2 border-dashed border-yellow-200/50 animate-spin-slow" />
+        )}
       </div>
 
       <div className="absolute top-0 left-0 w-full p-8 flex justify-between items-start pointer-events-none">
@@ -173,13 +173,13 @@ const App: React.FC = () => {
             Newtonian Sparks
           </h1>
           <p className="text-slate-500 text-xs font-mono uppercase tracking-widest mt-1">
-            {config.particleCount} Gravitational Bodies • N-Body Engine
+            RK4 Precision • {config.particleCount} Bodies
           </p>
         </div>
 
-        <div className="pointer-events-auto bg-slate-900/40 backdrop-blur-xl p-5 rounded-2xl border border-white/5 max-w-sm shadow-2xl">
+        <div className="pointer-events-auto bg-slate-900/40 backdrop-blur-xl p-5 rounded-2xl border border-white/5 max-w-sm shadow-2xl transition-all hover:bg-slate-900/60">
           <div className="flex items-center gap-2 mb-2 text-rose-400">
-            <i className="fas fa-microchip text-sm"></i>
+            <i className="fas fa-bolt text-sm"></i>
             <span className="font-bold uppercase tracking-widest text-[10px]">{insight.title}</span>
           </div>
           <p className="text-xs leading-relaxed text-slate-300 italic">
@@ -190,21 +190,21 @@ const App: React.FC = () => {
             disabled={loadingInsight}
             className="mt-4 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-[10px] uppercase font-black tracking-widest rounded-lg transition-all"
           >
-            {loadingInsight ? "Processing..." : "Generate AI Insight"}
+            {loadingInsight ? "Syncing..." : "Update AI Context"}
           </button>
         </div>
       </div>
 
-      <div className="absolute bottom-8 left-8 p-6 bg-slate-950/80 backdrop-blur-2xl rounded-3xl border border-white/5 shadow-2xl w-80 space-y-5 overflow-y-auto max-h-[80vh]">
+      <div className="absolute bottom-8 left-8 p-6 bg-slate-950/80 backdrop-blur-2xl rounded-3xl border border-white/5 shadow-2xl w-80 space-y-5 overflow-y-auto max-h-[80vh] scrollbar-hide">
         <div>
-          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">Palette Selector</label>
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-3">Spectrum Palettes</label>
           <div className="grid grid-cols-3 gap-2">
             {palettes.map((p) => (
               <button
                 key={p.id}
                 onClick={() => setConfig({ ...config, palette: p.id })}
                 className={`p-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${
-                  config.palette === p.id ? 'border-white/40 bg-white/10 text-white' : 'border-white/5 bg-slate-900/50 text-slate-500'
+                  config.palette === p.id ? 'border-white/40 bg-white/10 text-white' : 'border-white/5 bg-slate-900/50 text-slate-500 hover:text-white hover:bg-slate-800'
                 }`}
               >
                 <div className={`w-full h-1 rounded-full mb-1 bg-gradient-to-r ${p.color}`} />
@@ -216,28 +216,40 @@ const App: React.FC = () => {
 
         <div>
             <div className="flex justify-between items-center mb-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Particle Count</label>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Particle Density</label>
                 <span className="text-xs font-mono text-rose-400">{config.particleCount}</span>
             </div>
             <input 
-                type="range" min="3" max="1000" step="1" 
+                type="range" min="10" max="400" step="10" 
                 value={config.particleCount} 
                 onChange={(e) => setConfig({...config, particleCount: parseInt(e.target.value)})}
                 className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
             />
-            <p className="text-[8px] text-slate-600 mt-1 uppercase italic">High counts (1000) may impact performance on older devices.</p>
         </div>
 
         <div>
           <div className="flex justify-between items-center mb-2">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Attractor Strength</label>
-            <span className="text-xs font-mono text-yellow-400">{config.mouseStrength.toLocaleString()}</span>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Glow Intensity</label>
+            <span className="text-xs font-mono text-yellow-400">{(config.intensity).toFixed(1)}x</span>
           </div>
           <input 
-            type="range" min="-5000" max="15000" step="50" 
-            value={config.mouseStrength} 
-            onChange={(e) => setConfig({...config, mouseStrength: parseFloat(e.target.value)})}
-            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-500"
+            type="range" min="0.1" max="4" step="0.1" 
+            value={config.intensity} 
+            onChange={(e) => setConfig({...config, intensity: parseFloat(e.target.value)})}
+            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-yellow-400"
+          />
+        </div>
+
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Trail Length</label>
+            <span className="text-xs font-mono text-purple-400">{config.trailLength}</span>
+          </div>
+          <input 
+            type="range" min="1" max="100" step="1" 
+            value={config.trailLength} 
+            onChange={(e) => setConfig({...config, trailLength: parseInt(e.target.value)})}
+            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-400"
           />
         </div>
 
@@ -247,38 +259,31 @@ const App: React.FC = () => {
             <span className="text-xs font-mono text-cyan-400">{config.G.toFixed(2)}</span>
           </div>
           <input 
-            type="range" min="0" max="4" step="0.05" 
+            type="range" min="0" max="50" step="0.1" 
             value={config.G} 
             onChange={(e) => setConfig({...config, G: parseFloat(e.target.value)})}
+            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+          />
+        </div>
+
+        <div>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Attractor Weight</label>
+            <span className={`text-xs font-mono ${config.mouseStrength >= 0 ? 'text-cyan-400' : 'text-rose-400'}`}>
+              {config.mouseStrength.toLocaleString()}
+            </span>
+          </div>
+          <input 
+            type="range" min="-1000" max="30000" step="100" 
+            value={config.mouseStrength} 
+            onChange={(e) => setConfig({...config, mouseStrength: parseFloat(e.target.value)})}
             className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
           />
         </div>
 
         <div>
-            <div className="flex justify-between items-center mb-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Trail Persistence</label>
-                <div className="flex items-center gap-2">
-                    <input 
-                        type="checkbox" 
-                        checked={config.showTrails} 
-                        onChange={(e) => setConfig({...config, showTrails: e.target.checked})}
-                        className="w-3 h-3 accent-indigo-500"
-                    />
-                    <span className="text-xs font-mono text-indigo-400">{config.trailLength}</span>
-                </div>
-            </div>
-            <input 
-                type="range" min="1" max="100" step="1" 
-                value={config.trailLength} 
-                disabled={!config.showTrails}
-                onChange={(e) => setConfig({...config, trailLength: parseInt(e.target.value)})}
-                className={`w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 ${!config.showTrails ? 'opacity-30 cursor-not-allowed' : ''}`}
-            />
-        </div>
-
-        <div>
           <div className="flex justify-between items-center mb-2">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Simulation Drag</label>
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Simulation Friction</label>
             <span className="text-xs font-mono text-emerald-400">{(config.friction * 100).toFixed(2)}%</span>
           </div>
           <input 
@@ -286,19 +291,6 @@ const App: React.FC = () => {
             value={config.friction} 
             onChange={(e) => setConfig({...config, friction: parseFloat(e.target.value)})}
             className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-          />
-        </div>
-
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Visual Glow</label>
-            <span className="text-xs font-mono text-white">{config.intensity.toFixed(1)}x</span>
-          </div>
-          <input 
-            type="range" min="0.5" max="2.5" step="0.1" 
-            value={config.intensity} 
-            onChange={(e) => setConfig({...config, intensity: parseFloat(e.target.value)})}
-            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-white"
           />
         </div>
 
@@ -320,9 +312,9 @@ const App: React.FC = () => {
 
       <div className="absolute bottom-8 right-8 flex flex-col items-end pointer-events-none font-mono text-[9px] text-slate-600 uppercase tracking-widest">
         <div className="flex items-center gap-4 bg-slate-900/30 px-4 py-2 rounded-full border border-white/5">
-            <span className="flex items-center gap-1.5 text-emerald-500">
-                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
-                Real-time Physics
+            <span className="flex items-center gap-1.5 text-slate-400 font-bold">
+                <i className="fas fa-microchip"></i>
+                CPU Integrated
             </span>
             <span>60 FPS</span>
         </div>

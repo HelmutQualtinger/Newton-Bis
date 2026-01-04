@@ -72,10 +72,10 @@ fn main(@builtin(global_invocation_id) global_id : vec3<u32>) {
 
   if (p.pos.y < radius) {
     p.pos.y = radius;
-    p.vy *= -params.elasticity;
+    p.vel.y *= -params.elasticity;
   } else if (p.pos.y > params.height - radius) {
     p.pos.y = params.height - radius;
-    p.vy *= -params.elasticity;
+    p.vel.y *= -params.elasticity;
   }
 
   particles[index] = p;
@@ -95,6 +95,7 @@ struct VertexOutput {
   @builtin(position) position : vec4<f32>,
   @location(0) color : vec4<f32>,
   @location(1) uv : vec2<f32>,
+  @location(2) radius : f32,
 };
 
 @group(0) @binding(0) var<storage, read> particles : array<Particle>;
@@ -106,7 +107,7 @@ fn vs_main(
   @builtin(instance_index) instanceIndex : u32
 ) -> VertexOutput {
   let p = particles[instanceIndex];
-  let radius = sqrt(p.mass) * 1.2 * 8.0; // Glow radius
+  let glowRadius = sqrt(p.mass) * 12.0; 
   
   // Quad vertices
   var pos = array<vec2<f32>, 4>(
@@ -115,13 +116,14 @@ fn vs_main(
   );
   let uv = pos[vertexIndex];
   
-  let worldPos = p.pos + uv * radius;
+  let worldPos = p.pos + uv * glowRadius;
   let ndcPos = (worldPos / resolution) * 2.0 - 1.0;
   
   var out: VertexOutput;
   out.position = vec4<f32>(ndcPos.x, -ndcPos.y, 0.0, 1.0);
   out.color = p.color;
   out.uv = uv;
+  out.radius = sqrt(p.mass) * 0.5;
   return out;
 }
 
@@ -131,16 +133,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   if (dist > 1.0) { discard; }
   
   // High-intensity core + soft glow
-  let glow = exp(-dist * 4.0);
+  let glow = exp(-dist * 5.0) * 0.8;
   let core = exp(-dist * 15.0);
   
-  let finalColor = (in.color * glow) + vec4<f32>(1.0, 1.0, 1.0, 1.0) * core;
+  // Physical particle core
+  var finalColor = (in.color * glow);
+  if (dist < 0.1) {
+    finalColor += vec4<f32>(1.0, 1.0, 1.0, 1.0) * core;
+  }
+  
   return vec4<f32>(finalColor.rgb, 1.0);
 }
 `;
 
 export class WebGpuEngine {
-  // Fix: Use any to bypass missing WebGPU types in environment
   private device: any = null;
   private context: any = null;
   private particleBuffer: any = null;
@@ -153,15 +159,16 @@ export class WebGpuEngine {
   private config: SimulationConfig;
   private width: number = 0;
   private height: number = 0;
+  private isInitialized: boolean = false;
 
   constructor(config: SimulationConfig) {
     this.config = config;
   }
 
   async init(canvas: HTMLCanvasElement) {
-    // Fix: Access WebGPU via any casting to avoid Navigator type errors
     const adapter = await (navigator as any).gpu?.requestAdapter();
-    if (!adapter) throw new Error("WebGPU not supported");
+    if (!adapter) throw new Error("WebGPU not supported on this browser.");
+    
     this.device = await adapter.requestDevice();
     this.context = canvas.getContext("webgpu") as any;
 
@@ -177,18 +184,15 @@ export class WebGpuEngine {
 
     await this.setupPipelines();
     this.setupBuffers();
+    this.isInitialized = true;
   }
 
   private setupBuffers() {
     if (!this.device) return;
 
-    // Fix: Use window reference for GPUBufferUsage constants
     const GPUBufferUsage = (window as any).GPUBufferUsage;
-
-    // Particle size: pos(8) + vel(8) + mass(4) + padding(4) + color(16) = 40 bytes
-    // Aligned to 16 bytes for storage buffer = 48 bytes
-    const particleCount = 1000; // Increased capacity for WebGPU
-    const bufferSize = particleCount * 48;
+    const particleCount = 2000; // Capacity for WebGPU scaling
+    const bufferSize = particleCount * 48; // Struct size with alignment
     
     this.particleBuffer = this.device.createBuffer({
       size: bufferSize,
@@ -196,21 +200,20 @@ export class WebGpuEngine {
     });
 
     this.paramsBuffer = this.device.createBuffer({
-      size: 64, // Enough for SimParams
+      size: 128, 
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // Initial data
     const initialData = new Float32Array(particleCount * 12);
     for (let i = 0; i < particleCount; i++) {
       const offset = i * 12;
-      initialData[offset] = Math.random() * this.width;     // pos x
-      initialData[offset + 1] = Math.random() * this.height; // pos y
-      initialData[offset + 2] = (Math.random() - 0.5) * 2;  // vel x
-      initialData[offset + 3] = (Math.random() - 0.5) * 2;  // vel y
-      const mass = Math.random() * Math.random() * 25 + 2;
-      initialData[offset + 4] = mass;                       // mass
-      initialData[offset + 5] = 0;                          // padding
+      initialData[offset] = Math.random() * this.width;
+      initialData[offset + 1] = Math.random() * this.height;
+      initialData[offset + 2] = (Math.random() - 0.5) * 2;
+      initialData[offset + 3] = (Math.random() - 0.5) * 2;
+      const mass = Math.random() * Math.random() * 25 + 5;
+      initialData[offset + 4] = mass;
+      initialData[offset + 5] = 0;
 
       const color = this.generateColor(this.config.palette);
       initialData[offset + 8] = color[0];
@@ -301,7 +304,7 @@ export class WebGpuEngine {
       layout: this.renderPipeline.getBindGroupLayout(0),
       entries: [
         { binding: 0, resource: { buffer: this.particleBuffer } },
-        { binding: 1, resource: { buffer: this.paramsBuffer, offset: 32, size: 8 } },
+        { binding: 1, resource: { buffer: this.paramsBuffer, offset: 48, size: 8 } },
       ],
     });
   }
@@ -310,15 +313,20 @@ export class WebGpuEngine {
     const oldPalette = this.config.palette;
     const oldCnt = this.config.particleCount;
     this.config = config;
-    if (oldPalette !== config.palette || oldCnt !== config.particleCount) {
-        this.setupBuffers(); // Re-init particles on palette/count change
+    if (this.isInitialized && (oldPalette !== config.palette || oldCnt !== config.particleCount)) {
+        this.setupBuffers(); 
     }
   }
 
-  public render(mouse: { x: number, y: number, active: boolean }) {
-    if (!this.device || !this.context || !this.computePipeline || !this.renderPipeline || !this.computeBindGroup || !this.renderBindGroup) return;
+  public updateDimensions(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
 
-    // Update Uniforms
+  public render(mouse: { x: number, y: number, active: boolean }) {
+    if (!this.isInitialized || !this.device || !this.context || !this.computePipeline || !this.renderPipeline) return;
+
+    // Update SimParams Uniforms
     const params = new Float32Array(16);
     params[0] = this.config.G;
     params[1] = this.config.friction;
@@ -331,11 +339,14 @@ export class WebGpuEngine {
     params[8] = 0.5; // dt
     params[9] = this.config.collisionElasticity;
 
+    // Resolution uniform at offset 48 (12 floats)
+    params[12] = this.width;
+    params[13] = this.height;
+
     this.device.queue.writeBuffer(this.paramsBuffer!, 0, params);
 
     const commandEncoder = this.device.createCommandEncoder();
 
-    // 1. Compute Pass
     if (!this.config.paused) {
       const computePass = commandEncoder.beginComputePass();
       computePass.setPipeline(this.computePipeline);
@@ -345,14 +356,10 @@ export class WebGpuEngine {
       computePass.end();
     }
 
-    // 2. Render Pass
     const renderPass = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
-        // Trail effect via clearing with previous data or just clearing
-        // WebGPU makes real trails harder without post-processing, 
-        // but additive blending on a black background looks fantastic.
-        clearValue: { r: 0.01, g: 0.02, b: 0.09, a: 1.0 }, 
+        clearValue: { r: 0.005, g: 0.01, b: 0.05, a: 1.0 }, 
         loadOp: "clear",
         storeOp: "store",
       }],
@@ -363,5 +370,9 @@ export class WebGpuEngine {
     renderPass.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
+  }
+
+  public reset() {
+    this.setupBuffers();
   }
 }
